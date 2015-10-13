@@ -4,13 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
-using Rhino.Mocks.Expectations;
 using Rhino.Mocks.Impl;
-using Rhino.Mocks.Impl.Invocation.Specifications;
-using Rhino.Mocks.Interfaces;
-using Rhino.Mocks.Utilities;
 
 namespace Rhino.Mocks.PartialFromInstance.Tests
 {
@@ -19,11 +13,11 @@ namespace Rhino.Mocks.PartialFromInstance.Tests
         public static T StubFromInstance<T>(this T mock, T instance)
             where T : class
         {
-            if (!typeof(T).IsInterface)
+            if (!typeof (T).IsInterface)
                 throw new ArgumentException("This only works with interfaces at the moment.");
 
 
-            foreach (var interfaceMember in typeof(T).GetMembers())
+            foreach (var interfaceMember in typeof (T).GetMembers())
             {
                 MockMember(instance, mock, interfaceMember);
             }
@@ -80,10 +74,10 @@ namespace Rhino.Mocks.PartialFromInstance.Tests
                     .MakeGenericType(returnType)
                     //backing store for Do method
                     .GetMethod("Do");
-        
+
             var returnFunction =
                 Expression.Lambda(
-                    typeof(Func<>)
+                    typeof (Func<>)
                         .MakeGenericType(returnType),
                     Expression.Convert(
                         Expression.Call(
@@ -92,92 +86,64 @@ namespace Rhino.Mocks.PartialFromInstance.Tests
                             getMethod),
                         returnType),
                     new ParameterExpression[] {})
-                .Compile();
+                    .Compile();
 
-            var example = new Func<string>(() => "Hello World");
-
-
-            /*var simple =
-                Expression.Lambda(
-                    typeof(Func<>)
-                        .MakeGenericType(returnType),
-                    Expression.Constant("Hello World"))
-                .Compile();*/
-
-
-            Expression<Func<string>> exampleExpression = () => "Hello World";
-
-            var returnFuncParams = returnFunction.Method.GetParameters();
-            //var simpleParams = simple.Method.GetParameters();
-
-            var exampleParams = example.Method.GetParameters();
-            var exampleExpressionParams = exampleExpression.Compile().Method.GetParameters();
-
-            var methodParams = getMethod.GetParameters();
-            
             returnsMethod
                 .Invoke(
                     response,
                     new object[]
                     {
-                        Activator.CreateInstance(
-                            typeof(Func<>).MakeGenericType(returnType),
-                            new []
-                            {
-                                returnFunction})
-                            });
-        }
-
-        /// <summary>
-        /// Assign the <paramref name="returnDelegate"/> to
-        /// <see cref="MethodOptions{T}.expectation"/>'s 
-        /// <see cref="AbstractExpectation.actionToExecute"/>
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="methodOption"></param>
-        /// <param name="returnDelegate"></param>
-        private static void UpdateMethodOption<T>(MethodOptions<T> methodOption, Delegate returnDelegate)
-        {
-            var expectationField =
-                methodOption.GetType()
-                    .GetField("expectation");
-
-            var expectation = expectationField.GetValue(methodOption);
-
-            var actionToExecuteField = 
-
+                        DelegateWrapper.Create(returnFunction)
+                    });
         }
     }
 
-    public static class Helper
+    /// <summary>
+    /// <see cref="AbstractExpectation.AssertDelegateArgumentsMatchMethod"/>
+    /// expects that the<see cref="Delegate"/> passed into <see cref="MethodOptions{T}.Do"/> 
+    /// has the same number of <see cref="MethodBase.GetParameters"/> as the actual
+    /// method / property we are mocking.  
+    /// 
+    /// However, a <see cref="LambdaExpression.Compile()"/> returns a <see cref="Delegate"/>
+    /// that has a hidden Parameter, which will throw off this check: 
+    /// http://stackoverflow.com/questions/7935306/compiling-a-lambda-expression-results-in-delegate-with-closure-argument 
+    /// 
+    /// This class creates a wrapper around <see cref="LambdaExpression.Compile()"/> that
+    /// <see cref="AbstractExpectation.AssertDelegateArgumentsMatchMethod"/> is happy with.
+    /// </summary>
+    internal abstract class DelegateWrapper
     {
-        public static IDelegateWrapper CreateFunc(Delegate func, Type t)
+        internal abstract Delegate InvokeDelegate { get; }
+
+        public static Delegate Create(Delegate originalDelegate)
         {
-            return (Activator.CreateInstance(
-                typeof (SuperAwesomeDelegateWrapper<>)
-                    .MakeGenericType(t))
-                    as IDelegateWrapper);
-            
+            Type returnType = originalDelegate.Method.ReturnType;
+            var wrapperType = typeof(DelegateWrapper<>).MakeGenericType(returnType);
+            var wrapper = Activator.CreateInstance(wrapperType, originalDelegate);
+            return ((DelegateWrapper)wrapper).InvokeDelegate;
         }
     }
 
-    public interface IDelegateWrapper
+    internal sealed class DelegateWrapper<T> : DelegateWrapper
     {
-        Delegate Invoke();
-    }
+        private readonly Delegate _originalDelegate;
 
-    public class SuperAwesomeDelegateWrapper<T>
-    {
-        public SuperAwesomeDelegateWrapper(Delegate originalFunc)
+        public DelegateWrapper(Delegate originalDelegate)
         {
-            _originalFunc = originalFunc;
-        } 
-        
-        public Delegate Delegate { get; };
+            _originalDelegate = originalDelegate;
+        }
 
-        public T Invoke()
+        private T Invoke()
         {
-            return (T)_originalFunc.DynamicInvoke();
+            return (T)_originalDelegate.DynamicInvoke();
+        }
+
+        internal override Delegate InvokeDelegate {
+            get
+            {
+                return new Func<T>(Invoke);
+            }
         }
     }
+
 }

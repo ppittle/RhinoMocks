@@ -7,58 +7,63 @@ namespace Rhino.Mocks.PartialFromInstance.Tests
     [TestFixture]
     public class PartialFromInstanceTest
     {
+        private Foo _actual = new Foo
+        {
+            StringProp = "Actual",
+            IntProp = 42
+        };
+
         [Test]
-        public void PartialMockTest()
+        public void NormalBehavior()
         {
             // ARRANGE
-            var actual = new Foo
-            {
-                StringProp = "Actual",
-                IntProp = 42
-            };
-
-            
-
-            //ACT
-            var mock2 = MockRepository.GenerateMock<IFoo>();
-
-            //stub from actual
-            mock2.StubFromInstance(actual);
-
-            //stub one method
-            //mock2.Stub(x => x.IntProp).Do(new Func<int>(() => 25));
-            
-            #region Ignore
             var mock = MockRepository.GenerateMock<IFoo>();
-            var stub = mock.Stub(x => x.StringProp);
 
-            stub.Return("Mocked");
+            // ACT
+            mock
+                .Stub(x => x.StringProp)
+                .Return("Mocked");
 
             mock
                 .Stub(x => x.IntProp)
-                .Do(new Func<int>(() => actual.IntProp));
-            #endregion
+                .Do(new Func<int>(() => 14));
 
-            //ASSERT
-
-            //auto-stubbed method
+            // ASSERT
             Assert.AreEqual(
-                "Actual",
-                mock2.StringProp);
-
-            //override stubbed method
-            Assert.AreEqual(
-                42,
-                mock2.IntProp);
-
-            /*Assert.AreEqual(
-                42,
+                14,
                 mock.IntProp);
 
             Assert.AreEqual(
                 "Mocked",
                 mock.StringProp);
-            */
+
+            Console.Write("SUCCESS");
+        }
+
+        [Test]
+        public void PartialMockTest()
+        {
+            // ARRANGE
+            var mock = MockRepository.GenerateMock<IFoo>();
+
+            //ACT
+
+            //stub one method
+            mock.Stub(x => x.IntProp).Do(new Func<int>(() => 25));
+
+            //stub the rest from instance
+            mock.StubFromInstance(_actual);
+            
+            //ASSERT
+            //auto-stubbed method
+            Assert.AreEqual(
+                "Actual",
+                mock.StringProp);
+
+            //override stubbed method
+            Assert.AreEqual(
+                25,
+                mock.IntProp);
 
             Console.Write("SUCCESS");
         }
